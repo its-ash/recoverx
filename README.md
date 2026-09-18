@@ -1,18 +1,21 @@
 # RecoverX
 
-Android data-recovery app that finds hidden, renamed, and orphaned files using binary file signatures (magic numbers). Built with Flutter + your shared theme package.
+Android data-recovery app that finds hidden, renamed, and orphaned files using binary file signatures (magic numbers). Built with Flutter + shared theme package.
+
+**Landing page:** Open `index.html` in the project root, or visit the GitHub Pages site.
 
 ## Requirements
 
-- Flutter ≥ 3.24
-- Android SDK 26 (min) / 35 (target)
+- Flutter >= 3.24
+- Android SDK 26 (min) / 36 (target)
 - The shared theme package at `../theme` (GitHub: `its-ash/theme`)
+- AndroidX (enabled via `gradle.properties`)
 
 ## Get started
 
 ```sh
 flutter pub get
-dart run build_runner build --delete-conflicting-locks
+dart run build_runner build --delete-conflicting-outputs
 flutter run
 ```
 
@@ -54,6 +57,31 @@ android/
   app/src/main/AndroidManifest.xml  # Permissions
 ```
 
+## Build & deploy
+
+```sh
+make run      # flutter run (dev)
+make build    # generate drift code + build release APK (arm64)
+make deploy   # bump version, commit, push, create GitHub release with APK
+```
+
+`make deploy` automatically:
+1. Bumps the patch version and build number in `pubspec.yaml`
+2. Commits and pushes to `main`
+3. Creates a GitHub release tagged `v<version>` with the release APK attached
+
+## Supported file types
+
+30+ signatures across five categories:
+
+| Category | Formats |
+| --- | --- |
+| Images | JPEG, PNG, GIF, WEBP, BMP, HEIC |
+| Videos | MP4, MOV, AVI, MKV, 3GP, WEBM |
+| Audio | MP3, AAC, WAV, OGG, FLAC |
+| Documents | PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX |
+| Archives | ZIP, RAR4, RAR5, 7Z, APK |
+
 ## Scanning modes
 
 | Mode | Description |
@@ -65,7 +93,7 @@ android/
 
 ## Adding a new file signature
 
-Open `lib/domain/signature_database.dart` and append a `FileSignature` entry. It is automatically picked up by every scanner — no other code changes needed.
+Open `lib/domain/signature_database.dart` and append a `FileSignature` entry. It is automatically picked up by every scanner - no other code changes needed.
 
 ```dart
 FileSignature(
@@ -82,15 +110,16 @@ Use `null` for wildcard bytes (versioned headers like AVI / MKV / MOV).
 
 ## Architecture
 
-- **MVVM + Clean Architecture** — ViewModels via Riverpod `StateNotifierProvider`, use-cases in `core/`, models in `domain/`.
+- **MVVM + Clean Architecture** - ViewModels via Riverpod `StateNotifierProvider`, use-cases in `core/`, models in `domain/`.
 - **Riverpod** for state management and dependency injection.
 - **WorkManager** for background scans (planned integration via `workmanager` package).
 - **Drift** for persisted scan results (`recoverx_scan.db`).
 - **Shared theme package** (`../theme`) for Material Design 3 theming, colors, typography, and component library.
+- **AndroidX** with AppCompat themes for modern Android compatibility.
 
 ## Storage access
 
-- **Android ≤12**: requests `MANAGE_EXTERNAL_STORAGE` (All Files Access). The app opens system settings for the user to grant it — we cannot auto-grant it.
+- **Android <=12**: requests `MANAGE_EXTERNAL_STORAGE` (All Files Access). The app opens system settings for the user to grant it - we cannot auto-grant it.
 - **Android 13+**: requests granular `READ_MEDIA_IMAGES / VIDEOS / AUDIO` permissions.
 - Fallbacks to MediaStore and Storage Access Framework are used where full access is denied.
 
@@ -98,7 +127,7 @@ Use `null` for wildcard bytes (versioned headers like AVI / MKV / MOV).
 
 ### Recovery of truly deleted files
 
-RecoverX **cannot** recover files that the filesystem has already unlinked — that requires root access and raw block-level carving. What RecoverX *does* recover:
+RecoverX **cannot** recover files that the filesystem has already unlinked - that requires root access and raw block-level carving. What RecoverX *does* recover:
 
 - Hidden files (dotfiles, `.nomedia`-guarded)
 - Files with renamed or missing extensions

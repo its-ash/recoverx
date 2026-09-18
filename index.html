@@ -1,0 +1,1212 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RecoverX - Android File Recovery by Signature Scanning</title>
+  <meta name="description" content="RecoverX finds hidden, renamed, and orphaned files on Android by reading binary file signatures. No root required. Signature-based scanning for JPEG, PNG, MP4, PDF, and 30+ formats." />
+  <link rel="icon" href="android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml" type="image/svg+xml" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    /* ──────────────────────────────────────────────
+       Design tokens
+       ────────────────────────────────────────────── */
+    :root {
+      --bg: #0c0d0f;
+      --bg-elevated: #131517;
+      --bg-surface: #1a1d20;
+      --bg-surface-hover: #212528;
+      --border: #2a2e33;
+      --border-strong: #3a3f45;
+      --text: #e8eaed;
+      --text-secondary: #9ba1a8;
+      --text-muted: #6b7178;
+      --accent: #d4a017;
+      --accent-hover: #e8b420;
+      --accent-muted: rgba(212, 160, 23, 0.12);
+      --accent-glow: rgba(212, 160, 23, 0.06);
+      --danger: #e5484d;
+      --success: #46a758;
+      --radius: 12px;
+      --radius-sm: 8px;
+      --radius-pill: 999px;
+      --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+      --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+      --max-w: 1200px;
+      --font-sans: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      --font-mono: 'Geist Mono', 'SF Mono', 'Monaco', monospace;
+    }
+
+    /* ──────────────────────────────────────────────
+       Reset
+       ────────────────────────────────────────────── */
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+    body {
+      font-family: var(--font-sans);
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      font-size: 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow-x: hidden;
+    }
+    a { color: inherit; text-decoration: none; }
+    button { font-family: inherit; cursor: pointer; border: none; background: none; color: inherit; }
+    ul { list-style: none; }
+    img { max-width: 100%; display: block; }
+
+    /* ──────────────────────────────────────────────
+       Layout primitives
+       ────────────────────────────────────────────── */
+    .container {
+      max-width: var(--max-w);
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    .section {
+      padding: 96px 0;
+      position: relative;
+    }
+    @media (max-width: 768px) {
+      .section { padding: 64px 0; }
+    }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: clamp(1.75rem, 4vw, 2.5rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+      max-width: 20ch;
+    }
+
+    .section-body {
+      font-size: 1.0625rem;
+      color: var(--text-secondary);
+      max-width: 52ch;
+      line-height: 1.65;
+    }
+
+    /* ──────────────────────────────────────────────
+       Navigation
+       ────────────────────────────────────────────── */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      height: 64px;
+      display: flex;
+      align-items: center;
+      background: rgba(12, 13, 15, 0.72);
+      backdrop-filter: blur(16px) saturate(180%);
+      -webkit-backdrop-filter: blur(16px) saturate(180%);
+      border-bottom: 1px solid var(--border);
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .nav { background: var(--bg); backdrop-filter: none; -webkit-backdrop-filter: none; }
+    }
+
+    .nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      width: 100%;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .nav-logo-mark {
+      width: 28px;
+      height: 28px;
+      border-radius: var(--radius-sm);
+      background: var(--accent);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: 0.875rem;
+      color: var(--bg);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+    }
+    .nav-links a {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      transition: color 160ms var(--ease-out);
+    }
+    .nav-links a:hover { color: var(--text); }
+
+    .nav-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 18px;
+      background: var(--accent);
+      color: var(--bg);
+      border-radius: var(--radius-pill);
+      font-size: 0.875rem;
+      font-weight: 600;
+      transition: transform 160ms var(--ease-out), background 160ms var(--ease-out);
+    }
+    .nav-cta:hover { background: var(--accent-hover); }
+    .nav-cta:active { transform: scale(0.97); }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+    }
+
+    /* ──────────────────────────────────────────────
+       Hero - asymmetric split
+       ────────────────────────────────────────────── */
+    .hero {
+      padding: 80px 0 96px;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -20%;
+      right: -10%;
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .hero-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 64px;
+      align-items: center;
+      position: relative;
+    }
+    @media (max-width: 768px) {
+      .hero-grid {
+        grid-template-columns: 1fr;
+        gap: 48px;
+      }
+    }
+
+    .hero-content { max-width: 560px; }
+
+    .hero-title {
+      font-size: clamp(2.5rem, 5vw, 3.75rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.05;
+      margin-bottom: 24px;
+    }
+    .hero-title .accent {
+      color: var(--accent);
+    }
+
+    .hero-sub {
+      font-size: 1.125rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin-bottom: 36px;
+      max-width: 48ch;
+    }
+
+    .hero-ctas {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      background: var(--accent);
+      color: var(--bg);
+      border-radius: var(--radius-pill);
+      font-size: 0.9375rem;
+      font-weight: 600;
+      transition: transform 160ms var(--ease-out), background 160ms var(--ease-out);
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:active { transform: scale(0.97); }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 24px;
+      border: 1px solid var(--border-strong);
+      border-radius: var(--radius-pill);
+      font-size: 0.9375rem;
+      font-weight: 500;
+      color: var(--text);
+      transition: transform 160ms var(--ease-out), border-color 160ms var(--ease-out), background 160ms var(--ease-out);
+    }
+    .btn-secondary:hover { border-color: var(--text-muted); background: var(--bg-elevated); }
+    .btn-secondary:active { transform: scale(0.97); }
+
+    /* Hero visual - phone mockup via SVG */
+    .hero-visual {
+      position: relative;
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone-frame {
+      width: 280px;
+      height: 560px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-strong);
+      border-radius: 36px;
+      padding: 16px 12px;
+      position: relative;
+      box-shadow: 0 24px 80px -20px rgba(0, 0, 0, 0.6),
+                  0 0 0 1px var(--border) inset;
+    }
+    .phone-frame::before {
+      content: '';
+      position: absolute;
+      top: 12px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 60px;
+      height: 4px;
+      background: var(--border-strong);
+      border-radius: var(--radius-pill);
+    }
+
+    .phone-screen {
+      width: 100%;
+      height: 100%;
+      background: var(--bg);
+      border-radius: 24px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .phone-header {
+      padding: 28px 16px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .phone-header-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+    }
+    .phone-header-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--success);
+      box-shadow: 0 0 8px var(--success);
+    }
+
+    .phone-scan-bar {
+      margin: 0 16px 16px;
+      height: 4px;
+      background: var(--border);
+      border-radius: var(--radius-pill);
+      overflow: hidden;
+      position: relative;
+    }
+    .phone-scan-bar-fill {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 67%;
+      background: var(--accent);
+      border-radius: var(--radius-pill);
+    }
+
+    .phone-scan-info {
+      padding: 0 16px 16px;
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      color: var(--text-muted);
+    }
+
+    .phone-results {
+      flex: 1;
+      padding: 0 8px;
+      overflow: hidden;
+    }
+
+    .phone-file-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      transition: background 160ms var(--ease-out);
+    }
+    .phone-file-row:hover { background: var(--bg-surface); }
+
+    .phone-file-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: var(--radius-sm);
+      background: var(--bg-surface);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      flex-shrink: 0;
+    }
+    .phone-file-icon.img { color: var(--accent); }
+    .phone-file-icon.vid { color: #a78bfa; }
+    .phone-file-icon.doc { color: #60a5fa; }
+    .phone-file-icon.aud { color: #34d399; }
+
+    .phone-file-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .phone-file-name {
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .phone-file-meta {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      color: var(--text-muted);
+    }
+
+    /* ──────────────────────────────────────────────
+       Trust bar
+       ────────────────────────────────────────────── */
+    .trust-bar {
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      padding: 32px 0;
+    }
+    .trust-bar .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 32px;
+      flex-wrap: wrap;
+    }
+    .trust-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 0.8125rem;
+      color: var(--text-secondary);
+    }
+    .trust-item strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+    .trust-icon {
+      width: 20px;
+      height: 20px;
+      color: var(--accent);
+      flex-shrink: 0;
+    }
+
+    /* ──────────────────────────────────────────────
+       How it works - 3 step horizontal
+       ────────────────────────────────────────────── */
+    .steps-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 48px;
+    }
+    @media (max-width: 768px) {
+      .steps-grid { grid-template-columns: 1fr; }
+    }
+
+    .step-card {
+      padding: 32px 28px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out);
+    }
+    .step-card:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-surface);
+    }
+
+    .step-number {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--accent);
+      margin-bottom: 20px;
+    }
+
+    .step-title {
+      font-size: 1.125rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .step-desc {
+      font-size: 0.9375rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .step-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 20px;
+      color: var(--text-secondary);
+    }
+
+    /* ──────────────────────────────────────────────
+       Bento - supported formats
+       ────────────────────────────────────────────── */
+    .bento {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-auto-rows: minmax(140px, auto);
+      gap: 16px;
+      margin-top: 48px;
+    }
+    @media (max-width: 1024px) {
+      .bento { grid-template-columns: repeat(2, 1fr); }
+    }
+    @media (max-width: 640px) {
+      .bento { grid-template-columns: 1fr; }
+    }
+
+    .bento-cell {
+      padding: 24px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      display: flex;
+      flex-direction: column;
+      transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out);
+    }
+    .bento-cell:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-surface);
+    }
+
+    .bento-cell.large {
+      grid-column: span 2;
+      grid-row: span 2;
+      background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-surface) 100%);
+    }
+
+    .bento-cell.wide {
+      grid-column: span 2;
+    }
+
+    .bento-category {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      font-weight: 500;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .bento-title {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .bento-desc {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .bento-formats {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 16px;
+    }
+
+    .format-tag {
+      font-family: var(--font-mono);
+      font-size: 0.6875rem;
+      padding: 4px 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-pill);
+      color: var(--text-secondary);
+    }
+
+    .bento-cell.large .bento-title {
+      font-size: 1.25rem;
+    }
+    .bento-cell.large .bento-desc {
+      font-size: 0.9375rem;
+    }
+
+    /* Large cell visual - hex pattern */
+    .bento-hex-grid {
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 4px;
+      margin-top: 20px;
+      flex: 1;
+      align-content: center;
+    }
+    .bento-hex {
+      aspect-ratio: 1;
+      background: var(--border);
+      border-radius: 4px;
+      opacity: 0.3;
+    }
+    .bento-hex.active {
+      background: var(--accent);
+      opacity: 0.7;
+    }
+
+    /* ──────────────────────────────────────────────
+       Scan modes - 2x2 grid
+       ────────────────────────────────────────────── */
+    .modes-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-top: 48px;
+    }
+    @media (max-width: 768px) {
+      .modes-grid { grid-template-columns: 1fr; }
+    }
+
+    .mode-card {
+      padding: 28px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      display: flex;
+      gap: 20px;
+      align-items: flex-start;
+      transition: border-color 200ms var(--ease-out), background 200ms var(--ease-out);
+    }
+    .mode-card:hover {
+      border-color: var(--border-strong);
+      background: var(--bg-surface);
+    }
+
+    .mode-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius-sm);
+      background: var(--accent-muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      color: var(--accent);
+    }
+
+    .mode-name {
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .mode-desc {
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ──────────────────────────────────────────────
+       Warning section
+       ────────────────────────────────────────────── */
+    .warning {
+      padding: 40px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--danger);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      margin-top: 48px;
+    }
+
+    .warning-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 1.0625rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+    .warning-title svg {
+      width: 22px;
+      height: 22px;
+      color: var(--danger);
+      flex-shrink: 0;
+    }
+
+    .warning-body {
+      color: var(--text-secondary);
+      font-size: 0.9375rem;
+      line-height: 1.65;
+      margin-bottom: 20px;
+    }
+
+    .warning-list {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    @media (max-width: 640px) {
+      .warning-list { grid-template-columns: 1fr; }
+    }
+
+    .warning-list li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    .warning-list li::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--success);
+      margin-top: 7px;
+      flex-shrink: 0;
+    }
+    .warning-list li.cannot::before {
+      background: var(--danger);
+    }
+
+    /* ──────────────────────────────────────────────
+       Download CTA
+       ────────────────────────────────────────────── */
+    .cta-section {
+      text-align: center;
+      padding: 96px 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 800px;
+      height: 400px;
+      background: radial-gradient(ellipse, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .cta-title {
+      font-size: clamp(2rem, 4vw, 3rem);
+      font-weight: 700;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin-bottom: 16px;
+      position: relative;
+    }
+
+    .cta-sub {
+      font-size: 1.0625rem;
+      color: var(--text-secondary);
+      margin-bottom: 36px;
+      position: relative;
+    }
+
+    .cta-buttons {
+      display: flex;
+      gap: 12px;
+      justify-content: center;
+      flex-wrap: wrap;
+      position: relative;
+    }
+
+    /* ──────────────────────────────────────────────
+       Footer
+       ────────────────────────────────────────────── */
+    .footer {
+      border-top: 1px solid var(--border);
+      padding: 48px 0 32px;
+    }
+    .footer .container {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 24px;
+      flex-wrap: wrap;
+    }
+    .footer-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+    }
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      font-size: 0.8125rem;
+    }
+    .footer-links a {
+      color: var(--text-muted);
+      transition: color 160ms var(--ease-out);
+    }
+    .footer-links a:hover { color: var(--text); }
+
+    /* ──────────────────────────────────────────────
+       Scroll reveal
+       ────────────────────────────────────────────── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .reveal {
+        opacity: 1;
+        transform: none;
+        transition: none;
+      }
+      html { scroll-behavior: auto; }
+    }
+
+    /* Stagger within groups */
+    .reveal:nth-child(2) { transition-delay: 60ms; }
+    .reveal:nth-child(3) { transition-delay: 120ms; }
+    .reveal:nth-child(4) { transition-delay: 180ms; }
+
+    @media (hover: hover) and (pointer: fine) {
+      .btn-primary:hover, .btn-secondary:hover, .nav-cta:hover {
+        transform: translateY(-1px);
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ─────────────────── Navigation ─────────────────── -->
+  <nav class="nav">
+    <div class="container">
+      <a href="#" class="nav-logo">
+        <span class="nav-logo-mark">RX</span>
+        RecoverX
+      </a>
+      <div class="nav-links">
+        <a href="#how-it-works">How it works</a>
+        <a href="#formats">Formats</a>
+        <a href="#modes">Scan modes</a>
+        <a href="https://github.com/its-ash/recoverx/releases">Releases</a>
+      </div>
+      <a href="https://github.com/its-ash/recoverx/releases/latest" class="nav-cta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Download APK
+      </a>
+    </div>
+  </nav>
+
+  <!-- ─────────────────── Hero ─────────────────── -->
+  <section class="hero">
+    <div class="container">
+      <div class="hero-grid">
+        <div class="hero-content">
+          <h1 class="hero-title">
+            Find files that <span class="accent">forgot their names</span>.
+          </h1>
+          <p class="hero-sub">
+            RecoverX scans Android storage by reading binary file signatures, not file extensions. It recovers hidden, renamed, and orphaned files that other tools miss.
+          </p>
+          <div class="hero-ctas">
+            <a href="https://github.com/its-ash/recoverx/releases/latest" class="btn-primary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              Download APK
+            </a>
+            <a href="https://github.com/its-ash/recoverx" class="btn-secondary">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+              View source
+            </a>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal">
+          <div class="phone-frame">
+            <div class="phone-screen">
+              <div class="phone-header">
+                <span class="phone-header-title">RecoverX</span>
+                <span class="phone-header-dot"></span>
+              </div>
+              <div class="phone-scan-bar">
+                <div class="phone-scan-bar-fill"></div>
+              </div>
+              <div class="phone-scan-info">
+                <span>1,847 scanned</span>
+                <span>23 found</span>
+              </div>
+              <div class="phone-results">
+                <div class="phone-file-row">
+                  <div class="phone-file-icon img">JPG</div>
+                  <div class="phone-file-info">
+                    <div class="phone-file-name">IMG_0042 (recovered)</div>
+                    <div class="phone-file-meta">3.2 MB · wrong ext</div>
+                  </div>
+                </div>
+                <div class="phone-file-row">
+                  <div class="phone-file-icon vid">MP4</div>
+                  <div class="phone-file-info">
+                    <div class="phone-file-name">video_backup.tmp</div>
+                    <div class="phone-file-meta">48.1 MB · hidden</div>
+                  </div>
+                </div>
+                <div class="phone-file-row">
+                  <div class="phone-file-icon doc">PDF</div>
+                  <div class="phone-file-info">
+                    <div class="phone-file-name">document_001</div>
+                    <div class="phone-file-meta">892 KB · no ext</div>
+                  </div>
+                </div>
+                <div class="phone-file-row">
+                  <div class="phone-file-icon aud">MP3</div>
+                  <div class="phone-file-info">
+                    <div class="phone-file-name">voice_rec_042</div>
+                    <div class="phone-file-meta">2.7 MB · .nomedia</div>
+                  </div>
+                </div>
+                <div class="phone-file-row">
+                  <div class="phone-file-icon img">PNG</div>
+                  <div class="phone-file-info">
+                    <div class="phone-file-name">screenshot_hidden</div>
+                    <div class="phone-file-meta">1.4 MB · orphaned</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Trust bar ─────────────────── -->
+  <section class="trust-bar">
+    <div class="container">
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        <span><strong>No root</strong> required</span>
+      </div>
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <span><strong>30+ file</strong> signatures</span>
+      </div>
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        <span><strong>On-device</strong> only</span>
+      </div>
+      <div class="trust-item">
+        <svg class="trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <span><strong>Open</strong> source</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── How it works ─────────────────── -->
+  <section class="section" id="how-it-works">
+    <div class="container">
+      <p class="eyebrow reveal">How it works</p>
+      <h2 class="section-title reveal">Three steps from lost to found.</h2>
+      <p class="section-body reveal">
+        RecoverX reads the first few bytes of each file and matches them against a database of known magic numbers. No cloud, no upload, no guessing from file extensions.
+      </p>
+
+      <div class="steps-grid">
+        <div class="step-card reveal">
+          <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
+          <p class="step-number">01</p>
+          <h3 class="step-title">Grant storage access</h3>
+          <p class="step-desc">Choose a scan mode and allow storage permissions. RecoverX works with All Files Access on Android 12 and below, or granular media permissions on Android 13+.</p>
+        </div>
+
+        <div class="step-card reveal">
+          <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <p class="step-number">02</p>
+          <h3 class="step-title">Scan by signature</h3>
+          <p class="step-desc">The scanner walks storage directories and reads file headers, matching bytes against 30+ known file signatures. Pause, resume, or cancel at any time.</p>
+        </div>
+
+        <div class="step-card reveal">
+          <svg class="step-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <p class="step-number">03</p>
+          <h3 class="step-title">Export recovered files</h3>
+          <p class="step-desc">Select the files you want and export them to a date-stamped folder. Correct extensions are restored automatically based on the detected file type.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Supported formats (bento) ─────────────────── -->
+  <section class="section" id="formats">
+    <div class="container">
+      <p class="eyebrow reveal">Supported formats</p>
+      <h2 class="section-title reveal">30+ signatures, five categories.</h2>
+      <p class="section-body reveal">
+        Each format is defined by its magic number pattern. Adding a new file type is a single entry in the signature database, no other code changes needed.
+      </p>
+
+      <div class="bento">
+        <!-- Large cell: Images -->
+        <div class="bento-cell large reveal">
+          <p class="bento-category">Images</p>
+          <h3 class="bento-title">7 formats</h3>
+          <p class="bento-desc">JPEG, PNG, GIF, WEBP, BMP, HEIC, and more. Identifies images with wrong or missing extensions by reading header bytes.</p>
+          <div class="bento-formats">
+            <span class="format-tag">JPEG</span>
+            <span class="format-tag">PNG</span>
+            <span class="format-tag">GIF</span>
+            <span class="format-tag">WEBP</span>
+            <span class="format-tag">BMP</span>
+            <span class="format-tag">HEIC</span>
+          </div>
+          <div class="bento-hex-grid">
+            <div class="bento-hex active"></div><div class="bento-hex"></div><div class="bento-hex active"></div><div class="bento-hex"></div>
+            <div class="bento-hex"></div><div class="bento-hex active"></div><div class="bento-hex"></div><div class="bento-hex"></div>
+            <div class="bento-hex active"></div><div class="bento-hex"></div><div class="bento-hex"></div><div class="bento-hex active"></div>
+            <div class="bento-hex"></div><div class="bento-hex active"></div><div class="bento-hex"></div><div class="bento-hex"></div>
+            <div class="bento-hex"></div><div class="bento-hex"></div><div class="bento-hex active"></div><div class="bento-hex"></div>
+            <div class="bento-hex active"></div><div class="bento-hex"></div><div class="bento-hex"></div><div class="bento-hex active"></div>
+          </div>
+        </div>
+
+        <!-- Videos -->
+        <div class="bento-cell reveal">
+          <p class="bento-category">Videos</p>
+          <h3 class="bento-title">6 formats</h3>
+          <div class="bento-formats">
+            <span class="format-tag">MP4</span>
+            <span class="format-tag">MOV</span>
+            <span class="format-tag">AVI</span>
+            <span class="format-tag">MKV</span>
+            <span class="format-tag">3GP</span>
+            <span class="format-tag">WEBM</span>
+          </div>
+        </div>
+
+        <!-- Audio -->
+        <div class="bento-cell reveal">
+          <p class="bento-category">Audio</p>
+          <h3 class="bento-title">6 formats</h3>
+          <div class="bento-formats">
+            <span class="format-tag">MP3</span>
+            <span class="format-tag">AAC</span>
+            <span class="format-tag">WAV</span>
+            <span class="format-tag">OGG</span>
+            <span class="format-tag">FLAC</span>
+          </div>
+        </div>
+
+        <!-- Documents - wide -->
+        <div class="bento-cell wide reveal">
+          <p class="bento-category">Documents</p>
+          <h3 class="bento-title">6 formats</h3>
+          <p class="bento-desc">PDF, Word (DOC/DOCX), PowerPoint (PPT/PPTX), Excel (XLS/XLSX). Detects both legacy OLE and modern OOXML formats.</p>
+          <div class="bento-formats">
+            <span class="format-tag">PDF</span>
+            <span class="format-tag">DOC</span>
+            <span class="format-tag">DOCX</span>
+            <span class="format-tag">PPT</span>
+            <span class="format-tag">PPTX</span>
+            <span class="format-tag">XLS</span>
+            <span class="format-tag">XLSX</span>
+          </div>
+        </div>
+
+        <!-- Archives - wide -->
+        <div class="bento-cell wide reveal">
+          <p class="bento-category">Archives</p>
+          <h3 class="bento-title">5 formats</h3>
+          <p class="bento-desc">ZIP, RAR (v4 + v5), 7Z, APK. Distinguishes between archive types and Android package files by secondary headers.</p>
+          <div class="bento-formats">
+            <span class="format-tag">ZIP</span>
+            <span class="format-tag">RAR4</span>
+            <span class="format-tag">RAR5</span>
+            <span class="format-tag">7Z</span>
+            <span class="format-tag">APK</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Scan modes ─────────────────── -->
+  <section class="section" id="modes">
+    <div class="container">
+      <p class="eyebrow reveal">Scan modes</p>
+      <h2 class="section-title reveal">Choose how deep to look.</h2>
+      <p class="section-body reveal">
+        Each mode targets different recovery scenarios, from a quick check of common folders to a full signature-only sweep of everything on disk.
+      </p>
+
+      <div class="modes-grid">
+        <div class="mode-card reveal">
+          <div class="mode-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          </div>
+          <div>
+            <h3 class="mode-name">Quick</h3>
+            <p class="mode-desc">Scans common media folders and known locations. Fastest option for a first pass.</p>
+          </div>
+        </div>
+
+        <div class="mode-card reveal">
+          <div class="mode-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+          </div>
+          <div>
+            <h3 class="mode-name">Deep</h3>
+            <p class="mode-desc">Full storage walk including hidden and system directories. Finds files in cache and app data folders.</p>
+          </div>
+        </div>
+
+        <div class="mode-card reveal">
+          <div class="mode-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+          </div>
+          <div>
+            <h3 class="mode-name">Signature-only</h3>
+            <p class="mode-desc">Ignores file names and extensions entirely. Matches purely by magic numbers. Catches renamed files other tools skip.</p>
+          </div>
+        </div>
+
+        <div class="mode-card reveal">
+          <div class="mode-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </div>
+          <div>
+            <h3 class="mode-name">Hidden</h3>
+            <p class="mode-desc">Targets dotfiles and files guarded by .nomedia markers. Surfaces content invisible to gallery apps.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Limitations / Warning ─────────────────── -->
+  <section class="section">
+    <div class="container">
+      <p class="eyebrow reveal">What RecoverX can and cannot do</p>
+      <h2 class="section-title reveal">Honest about the limits.</h2>
+
+      <div class="warning reveal">
+        <div class="warning-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          RecoverX cannot recover files the filesystem has already unlinked
+        </div>
+        <p class="warning-body">
+          True block-level carving requires root access and raw disk reads. RecoverX works without root by finding files that are still on disk but invisible to normal browsing. Here is what it can and cannot recover:
+        </p>
+        <ul class="warning-list">
+          <li>Hidden files (dotfiles, .nomedia-guarded)</li>
+          <li>Files with renamed or missing extensions</li>
+          <li>Orphaned files in cache or system directories</li>
+          <li>Files in app data folders not normally browsable</li>
+          <li class="cannot">Files the OS has permanently deleted (unlinked)</li>
+          <li class="cannot">Files on encrypted storage without the key</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Download CTA ─────────────────── -->
+  <section class="cta-section">
+    <div class="container">
+      <h2 class="cta-title reveal">Start recovering files.</h2>
+      <p class="cta-sub reveal">Download the latest APK from GitHub releases. No account, no cloud, no tracking.</p>
+      <div class="cta-buttons reveal">
+        <a href="https://github.com/its-ash/recoverx/releases/latest" class="btn-primary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download APK
+        </a>
+        <a href="https://github.com/its-ash/recoverx" class="btn-secondary">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19c-5 1.5-5-2.5-7-3m14 6v-3.87a3.37 3.37 0 0 0-.94-2.61c3.14-.35 6.44-1.54 6.44-7A5.44 5.44 0 0 0 20 4.77 5.07 5.07 0 0 0 19.91 1S18.73.65 16 2.48a13.38 13.38 0 0 0-7 0C6.27.65 5.09 1 5.09 1A5.07 5.07 0 0 0 5 4.77a5.44 5.44 0 0 0-1.5 3.78c0 5.42 3.3 6.61 6.44 7A3.37 3.37 0 0 0 9 18.13V22"/></svg>
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ─────────────────── Footer ─────────────────── -->
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-brand">
+        <span class="nav-logo-mark" style="width:24px;height:24px;font-size:0.75rem;">RX</span>
+        RecoverX · Open source Android file recovery
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/its-ash/recoverx">GitHub</a>
+        <a href="https://github.com/its-ash/recoverx/releases">Releases</a>
+        <a href="https://github.com/its-ash/recoverx/issues">Issues</a>
+        <a href="https://github.com/its-ash/recoverx/blob/main/README.md">Docs</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // Scroll reveal via IntersectionObserver
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    reveals.forEach((el) => observer.observe(el));
+  </script>
+</body>
+</html>
