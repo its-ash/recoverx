@@ -22,6 +22,10 @@ android {
         versionName = flutter.versionName
     }
 
+    dependencies {
+        implementation("androidx.appcompat:appcompat:1.7.0")
+    }
+
     buildTypes {
         release {
             signingConfig = signingConfigs.getByName("debug")
