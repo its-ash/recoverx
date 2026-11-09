@@ -27,6 +27,5 @@ class ThemeModeNotifier extends StateNotifier<ThemeMode> {
   }
 }
 
-/// Optional custom ColorScheme override — defaults to the theme package's
-/// built-in scheme (blue/teal). Extend with presets later.
-final appColorSchemeProvider = Provider<ColorScheme?>((_) => null);
+/// Optional accent color for the theme package. Null uses the default accent.
+final appAccentProvider = Provider<Color?>((_) => null);

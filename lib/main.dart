@@ -19,13 +19,13 @@ class RecoverXApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(themeModeProvider);
-    final colorScheme = ref.watch(appColorSchemeProvider);
+    final accent = ref.watch(appAccentProvider);
 
     return MaterialApp(
       title: 'RecoverX',
       debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme(colorScheme: colorScheme),
-      darkTheme: AppTheme.darkTheme(colorScheme: colorScheme),
+      theme: UiTheme.light(accent: accent),
+      darkTheme: UiTheme.dark(accent: accent),
       themeMode: themeMode,
       home: const PermissionGate(child: ScanPage()),
     );
