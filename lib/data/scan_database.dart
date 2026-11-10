@@ -5,24 +5,34 @@ import 'package:drift/native.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
-import '../../domain/file_item.dart';
-import '../../domain/file_signature.dart';
+import '../domain/file_item.dart';
+import '../domain/file_metadata.dart';
+import '../domain/sensitive_rating.dart';
+import '../domain/signature_database.dart';
 
 part 'scan_database.g.dart';
 
-/// Drift row for a recovered/scanned file.
+/// Drift row for a scanned file. Lives in the app's private storage.
 class ScannedFileRows extends Table {
+  /// Path, plus `#offset` for carved items.
   TextColumn get id => text()();
   TextColumn get path => text()();
   IntColumn get size => integer()();
-  TextColumn get detectedExtension => text()();
-  TextColumn get detectedMimeType => text()();
-  TextColumn get category => text()();
-  TextColumn get displayName => text()();
-  TextColumn get discoveryReason => text()();
-  TextColumn get matchConfidence => text()();
+  TextColumn get typeId => text()();
+  TextColumn get confidence => text()();
+
+  /// Comma-separated [DiscoveryReason] names.
+  TextColumn get reasons => text().withDefault(const Constant(''))();
   DateTimeColumn get lastModified => dateTime().nullable()();
+  TextColumn get originalName => text().nullable()();
+  IntColumn get sourceOffset => integer().nullable()();
+  TextColumn get sourceApp => text().nullable()();
+  TextColumn get metadataJson => text().nullable()();
+  TextColumn get integrity => text().withDefault(const Constant('unknown'))();
   BoolColumn get isRecovered => boolean().withDefault(const Constant(false))();
+
+  /// [SensitiveRating.encode]; null until the sensitive-content check ran.
+  TextColumn get sensitiveJson => text().nullable()();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -35,27 +45,26 @@ class ScanDatabase extends _$ScanDatabase {
   ScanDatabase.forTesting(super.e);
 
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 3;
 
-  // ── Queries ───────────────────────────────────────────────────
+  @override
+  MigrationStrategy get migration => MigrationStrategy(
+        onUpgrade: (m, from, to) async {
+          // v1 rows lack type ids and metadata; the table is only a cache of
+          // the last scan, so rebuild it.
+          if (from < 2) {
+            await m.deleteTable(scannedFileRows.actualTableName);
+            await m.createTable(scannedFileRows);
+          } else if (from < 3) {
+            await m.addColumn(scannedFileRows, scannedFileRows.sensitiveJson);
+          }
+        },
+      );
 
-  Future<List<FileItem>> getAllFiles() =>
-      select(scannedFileRows).map(FileItemMapper.fromRow).get();
-
-  Future<List<FileItem>> getByCategory(FileCategory category) =>
-      (select(scannedFileRows)
-            ..where((r) => r.category.equals(category.name)))
-          .map(FileItemMapper.fromRow)
-          .get();
-
-  Future<List<FileItem>> getByReason(DiscoveryReason reason) =>
-      (select(scannedFileRows)
-            ..where((r) => r.discoveryReason.equals(reason.name)))
-          .map(FileItemMapper.fromRow)
-          .get();
-
-  Future<void> insertFile(FileItem item) =>
-      into(scannedFileRows).insertOnConflictUpdate(FileItemMapper.toRow(item));
+  Future<List<FileItem>> getAllFiles() async {
+    final rows = await select(scannedFileRows).get();
+    return rows.map(FileItemMapper.fromRow).whereType<FileItem>().toList();
+  }
 
   Future<void> insertFiles(List<FileItem> items) => batch((b) {
         b.insertAll(
@@ -65,9 +74,23 @@ class ScanDatabase extends _$ScanDatabase {
         );
       });
 
-  Future<void> markRecovered(String id) =>
-      (update(scannedFileRows)..where((r) => r.id.equals(id)))
+  Future<void> markRecovered(Iterable<String> ids) =>
+      (update(scannedFileRows)..where((r) => r.id.isIn(ids)))
           .write(const ScannedFileRowsCompanion(isRecovered: Value(true)));
+
+  /// Stores sensitive-content results by item id.
+  Future<void> saveSensitive(Map<String, SensitiveRating> ratings) => batch((b) {
+        for (final e in ratings.entries) {
+          b.update(
+            scannedFileRows,
+            ScannedFileRowsCompanion(sensitiveJson: Value(e.value.encode())),
+            where: (r) => r.id.equals(e.key),
+          );
+        }
+      });
+
+  Future<void> clearSensitive() =>
+      update(scannedFileRows).write(const ScannedFileRowsCompanion(sensitiveJson: Value(null)));
 
   Future<void> clearAll() => delete(scannedFileRows).go();
 }
@@ -75,33 +98,47 @@ class ScanDatabase extends _$ScanDatabase {
 class FileItemMapper {
   FileItemMapper._();
 
-  static FileItem fromRow(ScannedFileRow row) => FileItem(
-        id: row.id,
-        path: row.path,
-        size: row.size,
-        detectedExtension: row.detectedExtension,
-        detectedMimeType: row.detectedMimeType,
-        category: FileCategory.values.byName(row.category),
-        displayName: row.displayName,
-        discoveryReason: DiscoveryReason.values.byName(row.discoveryReason),
-        matchConfidence: MatchConfidence.values.byName(row.matchConfidence),
-        lastModified: row.lastModified,
-        isRecovered: row.isRecovered,
-      );
+  static FileItem? fromRow(ScannedFileRow row) {
+    final type = FileTypes.byId(row.typeId);
+    if (type == null) return null;
+    return FileItem(
+      path: row.path,
+      size: row.size,
+      type: type,
+      matchConfidence: MatchConfidence.values
+              .where((c) => c.name == row.confidence)
+              .firstOrNull ??
+          MatchConfidence.medium,
+      reasons: FileItem.decodeReasons(row.reasons),
+      lastModified: row.lastModified,
+      originalName: row.originalName,
+      sourceOffset: row.sourceOffset,
+      sourceApp: row.sourceApp,
+      metadata: FileMetadata.decode(row.metadataJson),
+      integrity:
+          Integrity.values.where((i) => i.name == row.integrity).firstOrNull ??
+              Integrity.unknown,
+      isRecovered: row.isRecovered,
+      sensitive: SensitiveRating.decode(row.sensitiveJson),
+    );
+  }
 
   static ScannedFileRowsCompanion toRow(FileItem item) =>
       ScannedFileRowsCompanion(
         id: Value(item.id),
         path: Value(item.path),
         size: Value(item.size),
-        detectedExtension: Value(item.detectedExtension),
-        detectedMimeType: Value(item.detectedMimeType),
-        category: Value(item.category.name),
-        displayName: Value(item.displayName),
-        discoveryReason: Value(item.discoveryReason.name),
-        matchConfidence: Value(item.matchConfidence.name),
+        typeId: Value(item.type.id),
+        confidence: Value(item.matchConfidence.name),
+        reasons: Value(item.reasons.map((r) => r.name).join(',')),
         lastModified: Value(item.lastModified),
+        originalName: Value(item.originalName),
+        sourceOffset: Value(item.sourceOffset),
+        sourceApp: Value(item.sourceApp),
+        metadataJson: Value(item.metadata?.encode()),
+        integrity: Value(item.integrity.name),
         isRecovered: Value(item.isRecovered),
+        sensitiveJson: Value(item.sensitive?.encode()),
       );
 }
 

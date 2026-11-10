@@ -1,180 +1,306 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import '../../domain/file_item.dart';
-import '../../domain/signature_database.dart';
+import '../analysis/file_analyzer.dart';
 import 'scan_models.dart';
-import 'signature_matcher.dart';
 
-/// Coordinates a full directory walk + signature scan.
+/// Runs a full scan in a background isolate so the UI never blocks.
 ///
-/// Scans **everything**: visible, hidden, dotfiles, system/cache dirs,
-/// renamed/wrong-extension files, and uses binary signatures (magic numbers)
-/// to identify the real type of every file — regardless of name or extension.
+/// Two phases:
+///  1. **Indexing**: walks every folder under the roots (hidden folders,
+///     `.nomedia` folders, trash and cache folders included) without
+///     following symlinks.
+///  2. **Analyzing**: reads each file's bytes to find its real type,
+///     metadata and integrity, and carves embedded files out of caches.
 ///
-/// Designed to run inside a background isolate or WorkManager task. All
-/// progress is emitted via a [Stream] so the UI can render live progress
-/// without polling. Supports pause / resume / cancel through controllers.
+/// The scanner only reads. It never writes to the device, so it cannot
+/// overwrite deleted data.
 class ScannerService {
-  ScannerService({SignatureMatcher? matcher})
-      : _matcher = matcher ?? SignatureMatcher();
+  Isolate? _isolate;
+  SendPort? _control;
+  ReceivePort? _port;
+  StreamController<ScanUpdate>? _out;
 
-  final SignatureMatcher _matcher;
+  bool get isRunning => _out != null;
 
-  // Pause / cancel signals.
-  final _pauseController = StreamController<void>.broadcast();
+  Stream<ScanUpdate> scan(ScanOptions options) {
+    _dispose();
+    final out = StreamController<ScanUpdate>();
+    final port = ReceivePort();
+    _out = out;
+    _port = port;
+    var last = ScanProgress.idle;
+    var finished = false;
 
-  bool _isPaused = false;
-  bool _isCancelled = false;
+    void finish({bool cancelled = false}) {
+      if (finished) return;
+      finished = true;
+      last = last.copyWith(
+          phase: ScanPhase.done, isPaused: false, isCancelled: cancelled);
+      out.add(ScanUpdate(last));
+      out.close();
+      _dispose();
+    }
 
-  /// Starts a full scan of [roots]. Emits [ScanProgress] for every file
-  /// processed and calls [onFound] for each recoverable file identified by
-  /// its binary signature.
-  ///
-  /// All files are scanned: hidden, dotfiles, system dirs, wrong-extension
-  /// files — everything. The signature matcher identifies the real type.
-  Stream<ScanProgress> scan({
-    required List<Directory> roots,
-    required void Function(FileItem found) onFound,
-  }) async* {
-    _isPaused = false;
-    _isCancelled = false;
-
-    final maxHeader = SignatureDatabase.maxHeaderBytes;
-
-    final queue = List<FileSystemEntity>.from(roots);
-    var scanned = 0;
-    var found = 0;
-    var totalEstimate = _estimateTotal(roots);
-
-    while (queue.isNotEmpty) {
-      if (_isCancelled) {
-        yield ScanProgress(
-          scannedCount: scanned,
-          foundCount: found,
-          currentPath: '',
-          percentage: scanned / (totalEstimate > 0 ? totalEstimate : 1),
-          isCancelled: true,
-        );
+    port.listen((msg) {
+      if (msg is SendPort) {
+        _control = msg;
         return;
       }
-
-      if (_isPaused) {
-        await _pauseController.stream.first;
-        _isPaused = false;
+      if (msg == null) {
+        // Isolate exited without a "done" message (crash or kill).
+        finish(cancelled: true);
+        return;
       }
-
-      final entity = queue.removeAt(0);
-
-      try {
-        if (entity is Directory) {
-          // Descend into every directory — including hidden dotdirs,
-          // .nomedia dirs, system/cache dirs — scan everything.
-          try {
-            await for (final child in entity.list(followLinks: false)) {
-              queue.add(child);
-            }
-          } catch (_) {
-            // Permission denied — skip silently.
-          }
-          continue;
-        }
-
-        if (entity is File) {
-          scanned++;
-          final path = entity.path;
-          final fileName = path.split(Platform.pathSeparator).last;
-
-          final isHiddenFile = fileName.startsWith('.');
-
-          // Read just the header bytes — never load whole files.
-          FileItem? item;
-          try {
-            final raf = await entity.open();
-            final header = raf.readSync(maxHeader);
-            await raf.close();
-
-            if (header.isNotEmpty) {
-              // Always identify by signature — ignore the file's extension.
-              final match = _matcher.identify(headerBytes: header);
-              if (match != null) {
-                final stat = await entity.stat();
-                    DiscoveryReason reason;
-                    if (isHiddenFile) {
-                      reason = DiscoveryReason.hidden;
-                    } else if (!_extensionMatches(
-                        fileName, match.signature.extension)) {
-                      reason = DiscoveryReason.renamed;
-                    } else {
-                      reason = DiscoveryReason.normal;
-                    }
-
-                    item = FileItem(
-                      id: path,
-                      path: path,
-                      size: stat.size,
-                      detectedExtension: match.signature.extension,
-                      detectedMimeType: match.signature.mimeType,
-                      category: match.signature.category,
-                      displayName: match.signature.displayName,
-                      discoveryReason: reason,
-                      matchConfidence: match.confidence,
-                      lastModified: stat.modified,
-                    );
-              }
-            }
-          } catch (_) {
-            // Read error — skip.
-          }
-
-          if (item != null) {
-            found++;
-            onFound(item);
-          }
-
-          yield ScanProgress(
-            scannedCount: scanned,
-            foundCount: found,
-            currentPath: path,
-            percentage: scanned / (totalEstimate > 0 ? totalEstimate : 1),
+      if (msg is List) {
+        // Uncaught error from the isolate: [error, stack].
+        out.addError(StateError('Scanner failed: ${msg.first}'));
+        finish(cancelled: true);
+        return;
+      }
+      final m = msg as Map;
+      switch (m['t']) {
+        case 'p':
+          last = ScanProgress(
+            phase: ScanPhase.values[m['ph'] as int],
+            scannedCount: m['s'] as int,
+            totalCount: m['n'] as int,
+            foundCount: m['f'] as int,
+            currentPath: m['c'] as String,
+            elapsed: Duration(milliseconds: m['e'] as int),
+            isPaused: m['z'] as bool,
           );
-        }
-      } catch (_) {
-        // Defensive: never crash the whole scan on a single bad path.
+          out.add(ScanUpdate(last));
+        case 'i':
+          final items = <FileItem>[];
+          for (final raw in m['items'] as List) {
+            final item = FileItem.fromMap((raw as Map).cast<String, Object?>());
+            if (item != null) items.add(item);
+          }
+          out.add(ScanUpdate(last, items));
+        case 'd':
+          finish(cancelled: m['c'] as bool);
       }
-    }
+    });
 
-    yield ScanProgress(
-      scannedCount: scanned,
-      foundCount: found,
-      currentPath: '',
-      percentage: 1.0,
-    );
+    Isolate.spawn(
+      _scanEntry,
+      [port.sendPort, options.toMap()],
+      onError: port.sendPort,
+      onExit: port.sendPort,
+      debugName: 'recoverx-scan',
+    ).then((iso) {
+      if (finished) {
+        iso.kill(priority: Isolate.immediate);
+      } else {
+        _isolate = iso;
+      }
+    }, onError: (Object e) {
+      out.addError(e);
+      finish(cancelled: true);
+    });
+
+    return out.stream;
   }
 
-  void pause() => _isPaused = true;
-  void resume() => _pauseController.add(null);
-  void cancel() => _isCancelled = true;
+  void pause() => _control?.send('pause');
+  void resume() => _control?.send('resume');
+
+  /// Asks the isolate to stop; it sends a final "done (cancelled)" update.
+  void cancel() {
+    final c = _control;
+    if (c == null) {
+      _isolate?.kill(priority: Isolate.immediate);
+      return;
+    }
+    c.send('cancel');
+    // Long carving of one huge file cannot be interrupted cooperatively;
+    // kill the isolate if it has not stopped shortly.
+    final iso = _isolate;
+    Timer(const Duration(seconds: 3), () {
+      if (identical(_isolate, iso) && iso != null) {
+        iso.kill(priority: Isolate.immediate);
+      }
+    });
+  }
+
+  void _dispose() {
+    _isolate = null;
+    _control = null;
+    _port?.close();
+    _port = null;
+    _out = null;
+  }
 
   void dispose() {
-    _pauseController.close();
+    _isolate?.kill(priority: Isolate.immediate);
+    _dispose();
   }
+}
 
-  // ───────────────────────── helpers ─────────────────────────
+// ───────────────────────── Isolate side ─────────────────────────
 
-  static bool _extensionMatches(String fileName, String detected) {
-    final dot = fileName.lastIndexOf('.');
-    if (dot == -1) return false;
-    return fileName.substring(dot + 1).toLowerCase() == detected.toLowerCase();
-  }
+@pragma('vm:entry-point')
+Future<void> _scanEntry(List<Object?> args) async {
+  final main = args[0] as SendPort;
+  final options = ScanOptions.fromMap(args[1] as Map);
+  final control = ReceivePort();
+  main.send(control.sendPort);
 
-  static int _estimateTotal(List<Directory> roots) {
-    var count = 0;
-    for (final r in roots) {
-      try {
-        count += r.listSync(recursive: true, followLinks: false).length;
-      } catch (_) {}
+  var paused = false;
+  var cancelled = false;
+  control.listen((m) {
+    switch (m) {
+      case 'pause':
+        paused = true;
+      case 'resume':
+        paused = false;
+      case 'cancel':
+        cancelled = true;
+        paused = false;
     }
-    return count > 0 ? count : 1;
+  });
+
+  final clock = Stopwatch()..start();
+  var lastProgress = -1000;
+  var phase = ScanPhase.indexing;
+  var scanned = 0, total = 0, found = 0;
+  var current = '';
+
+  void progress({bool force = false}) {
+    final now = clock.elapsedMilliseconds;
+    if (!force && now - lastProgress < 120) return;
+    lastProgress = now;
+    main.send({
+      't': 'p',
+      'ph': phase.index,
+      's': scanned,
+      'n': total,
+      'f': found,
+      'c': current,
+      'e': now,
+      'z': paused,
+    });
   }
+
+  /// Lets control messages in and blocks while paused.
+  Future<void> breathe() async {
+    await Future<void>.delayed(Duration.zero);
+    if (paused) progress(force: true);
+    while (paused && !cancelled) {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+    }
+    if (!paused) progress();
+  }
+
+  // ── Phase 1: index ──
+  final files = <String>[];
+  final noMedia = <bool>[];
+  final exclude = options.exclude.map(_strip).toSet();
+  final roots = _dedupeRoots(options.roots);
+  final stack = <(String, bool)>[for (final r in roots.reversed) (r, false)];
+  var dirs = 0;
+
+  while (stack.isNotEmpty && !cancelled) {
+    final (dir, inherited) = stack.removeLast();
+    if (exclude.contains(_strip(dir))) continue;
+    List<FileSystemEntity> children;
+    try {
+      children = Directory(dir).listSync(followLinks: false);
+    } catch (_) {
+      continue; // No permission (e.g. Android/data on 11+): skip.
+    }
+    final hasNoMedia = inherited ||
+        children.any((c) => c is File && c.path.endsWith('/.nomedia'));
+    final subdirs = <String>[];
+    for (final c in children) {
+      if (c is File) {
+        files.add(c.path);
+        noMedia.add(hasNoMedia);
+      } else if (c is Directory) {
+        subdirs.add(c.path);
+      }
+    }
+    subdirs.sort();
+    for (final d in subdirs.reversed) {
+      stack.add((d, hasNoMedia));
+    }
+    scanned = files.length;
+    current = dir;
+    if (++dirs % 40 == 0) {
+      progress();
+      await breathe();
+    }
+  }
+
+  // ── Phase 2: analyze ──
+  phase = ScanPhase.analyzing;
+  total = files.length;
+  scanned = 0;
+  progress(force: true);
+
+  const analyzer = FileAnalyzer();
+  final batch = <Map<String, Object?>>[];
+  var lastFlush = clock.elapsedMilliseconds;
+
+  void flush() {
+    if (batch.isEmpty) return;
+    main.send({'t': 'i', 'items': List.of(batch)});
+    batch.clear();
+    lastFlush = clock.elapsedMilliseconds;
+  }
+
+  for (var i = 0; i < files.length; i++) {
+    if (i % 16 == 0) await breathe();
+    if (cancelled) break;
+    current = files[i];
+    List<FileItem> items;
+    try {
+      items = analyzer.analyze(files[i],
+          underNoMedia: noMedia[i],
+          deep: options.deep,
+          isCancelled: () => cancelled);
+    } catch (_) {
+      items = const [];
+    }
+    scanned = i + 1;
+    if (items.isNotEmpty) {
+      found += items.length;
+      batch.addAll(items.map((e) => e.toMap()));
+    }
+    if (batch.length >= 200 || clock.elapsedMilliseconds - lastFlush > 300) {
+      flush();
+    }
+    progress();
+  }
+
+  flush();
+  progress(force: true);
+  main.send({'t': 'd', 'c': cancelled});
+  control.close();
+}
+
+String _strip(String p) =>
+    p.length > 1 && p.endsWith('/') ? p.substring(0, p.length - 1) : p;
+
+/// Drops roots that are missing, duplicates (same real path), or nested
+/// inside another root, so no file is scanned twice.
+List<String> _dedupeRoots(List<String> roots) {
+  final real = <String>[];
+  for (final r in roots) {
+    try {
+      final d = Directory(r);
+      if (!d.existsSync()) continue;
+      real.add(_strip(d.resolveSymbolicLinksSync()));
+    } catch (_) {}
+  }
+  real.sort((a, b) => a.length.compareTo(b.length));
+  final out = <String>[];
+  for (final r in real) {
+    if (out.any((o) => r == o || r.startsWith('$o/'))) continue;
+    out.add(r);
+  }
+  return out;
 }

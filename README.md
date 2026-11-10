@@ -1,99 +1,75 @@
 # RecoverX
 
-Android data-recovery app that finds hidden, renamed, and orphaned files using binary file signatures (magic numbers). Built with Flutter + shared theme package.
+Find hidden, renamed and orphaned files by their signature.
 
-**Landing page:** Open `index.html` in the project root, or visit the GitHub Pages site.
+**[Website](https://recoverx.itsash.in)** · **[Download APK](https://github.com/its-ash/recoverx/releases/latest/download/recoverx.apk)** · Get it in **[Ash Store](https://store.itsash.in)**
 
-## Requirements
+## Features
 
-- Flutter >= 3.24
-- Android SDK 26 (min) / 36 (target)
-- The shared theme package at `../theme` (GitHub: `its-ash/theme`)
-- AndroidX (enabled via `gradle.properties`)
+- **Signature scanning**: identifies files by their binary signature (magic
+  numbers), not their name. 30+ signatures across five categories:
 
-## Get started
+  | Category | Formats |
+  | --- | --- |
+  | Images | JPEG, PNG, GIF, WEBP, BMP, HEIC |
+  | Videos | MP4, MOV, AVI, MKV, 3GP, WEBM |
+  | Audio | MP3, AAC, WAV, OGG, FLAC |
+  | Documents | PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX |
+  | Archives | ZIP, RAR4, RAR5, 7Z, APK |
 
-```sh
+- **Scan modes**:
+
+  | Mode | Description |
+  | --- | --- |
+  | Quick | Common media folders + known locations |
+  | Deep | Full storage including hidden and system directories |
+  | Signature-only | Ignore file names/extensions; match by magic numbers only |
+  | Hidden | Dotfiles and `.nomedia`-guarded files |
+
+- **Export** with hash-verified reports, and a browse server for a computer on
+  the same network.
+
+### What it can and cannot recover
+
+RecoverX **cannot** recover files that the filesystem has already unlinked;
+that needs root and raw block-level carving. It *does* find:
+
+- hidden files (dotfiles, `.nomedia`-guarded);
+- files with renamed or missing extensions;
+- orphaned files in cache or system folders still on disk;
+- files in app data folders not normally browsable.
+
+The home screen shows this warning before a scan.
+
+## Install
+
+- **Ash Store**: install [Ash Store](https://store.itsash.in) once, then install and update RecoverX from it.
+- **APK**: download the [latest APK](https://github.com/its-ash/recoverx/releases/latest/download/recoverx.apk) on your phone and open it. Allow your browser to install unknown apps if Android asks.
+
+Requires Android 8.0 (API 26) or later, arm64.
+
+**Storage access**: Android 11+ asks for "All files access"
+(`MANAGE_EXTERNAL_STORAGE`) for a full scan; you grant it in system settings.
+Android 13+ media-only permissions are a limited fallback, and MediaStore and
+the Storage Access Framework are used where full access is denied.
+
+## Develop
+
+Needs Flutter ≥ 3.44 and the shared theme package at `../theme`.
+
+```bash
 flutter pub get
 dart run build_runner build --delete-conflicting-outputs
-flutter run
+
+make run      # flutter run
+make build    # generate drift code + release APK (arm64)
+make deploy   # bump version, build, tag, push, GitHub release (see store.mk)
 ```
 
-## Project structure
+### Add a file signature
 
-```
-lib/
-  main.dart
-  domain/                  # Models
-    file_signature.dart    # Signature model
-    file_item.dart         # Recovered file model
-    signature_database.dart# All magic-number definitions
-  core/
-    scanner/
-      signature_matcher.dart   # Pure-Dart matcher engine
-      scanner_service.dart     # Directory walk + scan
-      scan_models.dart         # ScanMode + ScanProgress
-    recovery/
-      recovery_service.dart    # Copy + restore correct extension
-    permissions/
-      permission_handler.dart  # MANAGE_EXTERNAL_STORAGE + SAF + MediaStore
-  data/
-    scan_database.dart         # Drift database for results
-  ui/
-    app_shell.dart             # Bottom-nav shell
-    theme/
-      theme_controller.dart    # Light/dark/system
-    home/
-      home_screen.dart
-      home_view_model.dart
-    scan/
-      scan_progress_screen.dart
-      scan_view_model.dart
-    results/
-      results_screen.dart
-      results_view_model.dart
-      file_detail_sheet.dart
-android/
-  app/src/main/AndroidManifest.xml  # Permissions
-```
-
-## Build & deploy
-
-```sh
-make run      # flutter run (dev)
-make build    # generate drift code + build release APK (arm64)
-make deploy   # bump version, commit, push, create GitHub release with APK
-```
-
-`make deploy` automatically:
-1. Bumps the patch version and build number in `pubspec.yaml`
-2. Commits and pushes to `main`
-3. Creates a GitHub release tagged `v<version>` with the release APK attached
-
-## Supported file types
-
-30+ signatures across five categories:
-
-| Category | Formats |
-| --- | --- |
-| Images | JPEG, PNG, GIF, WEBP, BMP, HEIC |
-| Videos | MP4, MOV, AVI, MKV, 3GP, WEBM |
-| Audio | MP3, AAC, WAV, OGG, FLAC |
-| Documents | PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX |
-| Archives | ZIP, RAR4, RAR5, 7Z, APK |
-
-## Scanning modes
-
-| Mode | Description |
-| --- | --- |
-| Quick | Common media folders + known locations |
-| Deep | Full storage including hidden and system directories |
-| Signature-only | Ignore file names/extensions — match by magic numbers only |
-| Hidden | Dotfiles and `.nomedia`-guarded files |
-
-## Adding a new file signature
-
-Open `lib/domain/signature_database.dart` and append a `FileSignature` entry. It is automatically picked up by every scanner - no other code changes needed.
+Append a `FileSignature` to `lib/domain/signature_database.dart`. Every scanner
+picks it up. Use `null` for wildcard bytes (versioned headers like AVI, MKV, MOV).
 
 ```dart
 FileSignature(
@@ -106,38 +82,37 @@ FileSignature(
 )
 ```
 
-Use `null` for wildcard bytes (versioned headers like AVI / MKV / MOV).
+## Release
 
-## Architecture
+`make deploy` follows the Ash Store kit (`store.mk`, `store.json`): it bumps the
+version in `pubspec.yaml`, builds, commits, tags `vX.Y.Z`, pushes, and publishes
+a GitHub release with `recoverx.apk`. Ash Store and the website pick up the new
+version from that release.
 
-- **MVVM + Clean Architecture** - ViewModels via Riverpod `StateNotifierProvider`, use-cases in `core/`, models in `domain/`.
-- **Riverpod** for state management and dependency injection.
-- **WorkManager** for background scans (planned integration via `workmanager` package).
-- **Drift** for persisted scan results (`recoverx_scan.db`).
-- **Shared theme package** (`../theme`) for Material Design 3 theming, colors, typography, and component library.
-- **AndroidX** with AppCompat themes for modern Android compatibility.
+## Project layout
 
-## Storage access
+```
+lib/
+  main.dart
+  domain/          # models + signature_database.dart (all magic numbers)
+  core/
+    scanner/       # signature matcher, directory walk + scan, scan models
+    recovery/      # copy + restore correct extension
+    permissions/   # MANAGE_EXTERNAL_STORAGE + SAF + MediaStore
+    share/         # browse server for a computer on the same network
+  data/            # Drift database for results
+  ui/              # app shell, theme controller, home, scan, results
+```
 
-- **Android <=12**: requests `MANAGE_EXTERNAL_STORAGE` (All Files Access). The app opens system settings for the user to grant it - we cannot auto-grant it.
-- **Android 13+**: requests granular `READ_MEDIA_IMAGES / VIDEOS / AUDIO` permissions.
-- Fallbacks to MediaStore and Storage Access Framework are used where full access is denied.
+MVVM + Clean Architecture with Riverpod, Drift for scan results, and the shared
+theme package for UI.
 
-## Important warnings
+**Google Play note**: `MANAGE_EXTERNAL_STORAGE` is restricted on Google Play
+and needs a Permissions Declaration. Direct APK and Ash Store installs have no
+such restriction.
 
-### Recovery of truly deleted files
+## License
 
-RecoverX **cannot** recover files that the filesystem has already unlinked - that requires root access and raw block-level carving. What RecoverX *does* recover:
+No license file is included yet.
 
-- Hidden files (dotfiles, `.nomedia`-guarded)
-- Files with renamed or missing extensions
-- Orphaned files in cache / system directories still on disk
-- Files in app data folders not normally browsable
-
-The home screen surfaces this warning to the user before scanning.
-
-### Google Play policy considerations
-
-- `MANAGE_EXTERNAL_STORAGE` is a restricted permission on Google Play. You must submit a Permissions Declaration Form justifying its use and pass the Play Console review. Distribution via direct APK sideload or alternative stores has no such restriction.
-- The app must not access files unrelated to its stated purpose.
-- If targeting Play Store distribution and you cannot justify All Files Access, drop to MediaStore + SAF only and remove the `MANAGE_EXTERNAL_STORAGE` permission. Deep scan will be limited but the signature engine still works on accessible files.
+Built by [itsash.in](https://itsash.in).

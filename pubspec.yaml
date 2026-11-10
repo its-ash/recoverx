@@ -1,7 +1,7 @@
 name: recoverx
 description: "git "
 publish_to: "none"
-version: 1.0.2+3
+version: 1.0.3+4
 
 environment:
   sdk: ^3.5.0
@@ -39,14 +39,22 @@ dependencies:
   device_info_plus: ^13.2.0
 
   # Util
+  crypto: ^3.0.6
   collection: ^1.18.0
   uuid: ^4.5.1
   google_fonts: ^8.2.1
 
+  # On-device sensitive-content check (assets/models/README.md)
+  tflite_flutter: ^0.12.1
+
 dev_dependencies:
+  flutter_test:
+    sdk: flutter
   flutter_lints: ^5.0.0
   build_runner: ^2.4.13
   drift_dev: ^2.35.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/models/nsfw_mobilenet_v2_224.tflite

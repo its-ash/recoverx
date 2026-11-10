@@ -28,4 +28,5 @@ android/app/google-services.json
 # Generated
 *.g.dart
 *.freezed.dart
-*.config.dart
+*.config.dartdist/
+dist/

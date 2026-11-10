@@ -4,7 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:theme/theme.dart';
 
 import 'core/permissions/permission_handler.dart';
-import 'ui/scan_page.dart';
+import 'ui/home_shell.dart';
 import 'ui/theme/theme_controller.dart';
 
 void main() {
@@ -27,7 +27,7 @@ class RecoverXApp extends ConsumerWidget {
       theme: UiTheme.light(accent: accent),
       darkTheme: UiTheme.dark(accent: accent),
       themeMode: themeMode,
-      home: const PermissionGate(child: ScanPage()),
+      home: const PermissionGate(child: HomeShell()),
     );
   }
 }

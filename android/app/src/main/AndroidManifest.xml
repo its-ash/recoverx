@@ -1,9 +1,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <!-- All-files access for deep scans (Android ≤12). -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        android:minSdkVersion="26"
-        android:maxSdkVersion="31" />
+    <!-- All-files access (Android 11+): required to read hidden, renamed,
+         trashed and non-media files. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
 
     <!-- Granular media permissions (Android 13+). -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
@@ -15,6 +14,10 @@
         android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
+
+    <!-- "Browse on a computer": read-only LAN web server, started by the
+         user and protected by a PIN. Nothing is uploaded. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <!-- Background scanning via WorkManager. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />

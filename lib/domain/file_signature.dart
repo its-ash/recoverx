@@ -5,25 +5,20 @@ enum FileCategory {
   audio,
   document,
   archive,
+
+  /// Databases, contacts, calendars: app data an investigator usually wants.
+  data,
   other,
 }
 
-/// A single file-signature definition (magic number).
-///
-/// [offset] is the byte offset from the start of the file where [pattern]
-/// begins. [footer] is an optional trailing signature verified against the
-/// end of the file for extra confidence.
-class FileSignature {
-  const FileSignature({
+/// A concrete file type the detector can report.
+class FileType {
+  const FileType({
     required this.id,
     required this.category,
     required this.extension,
     required this.mimeType,
     required this.displayName,
-    required this.pattern,
-    this.offset = 0,
-    this.footer,
-    this.maxHeaderBytes = 64,
   });
 
   /// Unique id, e.g. 'jpeg'.
@@ -41,39 +36,97 @@ class FileSignature {
   /// Human readable name, e.g. 'JPEG Image'.
   final String displayName;
 
-  /// Magic number bytes. Wildcard bytes inside the pattern are represented by
-  /// `null` — they match any value at that position (used for versioned
-  /// headers like AVI / MKV).
+  @override
+  bool operator ==(Object other) => other is FileType && other.id == id;
+
+  @override
+  int get hashCode => id.hashCode;
+
+  @override
+  String toString() => 'FileType($id)';
+
+  /// True when a file named with [ext] (no dot, any case) is not disguised:
+  /// the canonical extension or a common alias of the same format family.
+  bool acceptsExtension(String ext) {
+    final e = ext.toLowerCase();
+    if (e == extension) return true;
+    return _aliases[id]?.contains(e) ?? false;
+  }
+
+  static const _isoVideo = {'mp4', 'm4v', 'm4a', 'm4b', 'mov', '3gp', '3gpp', '3ga', '3g2', 'mp4v', 'qt'};
+  static const _ole = {'doc', 'dot', 'xls', 'xlt', 'ppt', 'pps', 'pot', 'msg', 'ole', 'wps', 'vsd', 'pub'};
+
+  static const Map<String, Set<String>> _aliases = {
+    'jpeg': {'jpeg', 'jpe', 'jfif', 'jif'},
+    'tiff': {'tiff'},
+    'heic': {'heif', 'hif'},
+    'heif': {'heic', 'hif'},
+    'mp4': _isoVideo,
+    'm4v': _isoVideo,
+    'mov': _isoVideo,
+    '3gp': _isoVideo,
+    '3g2': _isoVideo,
+    'm4a': _isoVideo,
+    'mkv': {'mka', 'mk3d', 'webm'},
+    'webm': {'mkv'},
+    'asf': {'wma', 'asf'},
+    'mpeg': {'mpeg', 'mpe', 'vob', 'm2p'},
+    'ts': {'mts', 'm2ts', 'tsv'},
+    'mp3': {'mpga', 'mp2'},
+    'aac': {'adts'},
+    'ogg': {'oga', 'ogv', 'opus'},
+    'opus': {'ogg', 'oga'},
+    'midi': {'midi', 'kar', 'rmi'},
+    'aiff': {'aif', 'aifc'},
+    'doc': _ole,
+    'xls': _ole,
+    'ppt': _ole,
+    'msg': _ole,
+    'ole': _ole,
+    'docx': {'docm', 'dotx', 'dotm'},
+    'xlsx': {'xlsm', 'xltx', 'xltm'},
+    'pptx': {'pptm', 'ppsx', 'potx'},
+    'apk': {'apks', 'xapk', 'apkm'},
+    'gzip': {'tgz', 'gzip'},
+    'sqlite': {'sqlite', 'sqlite3', 'db3', 'sqlitedb'},
+    'vcf': {'vcard'},
+    'ics': {'ical', 'ifb'},
+  };
+}
+
+/// A plain magic-number signature that maps straight to a [FileType].
+///
+/// Container formats (ISO-BMFF, RIFF, EBML, ZIP, OLE, Ogg, TIFF) need more
+/// than a prefix to tell their sub-types apart; the detector handles those in
+/// code. Everything else is a [FileSignature] in `SignatureDatabase`.
+class FileSignature {
+  const FileSignature({
+    required this.type,
+    required this.pattern,
+    this.offset = 0,
+  });
+
+  final FileType type;
+
+  /// Magic bytes. `null` entries are wildcards.
   final List<int?> pattern;
 
   /// Byte offset where [pattern] starts.
   final int offset;
 
-  /// Optional trailing signature verified against the end of the file.
-  final List<int>? footer;
+  /// Number of fixed (non-wildcard) bytes; longer patterns win ties.
+  int get strength => pattern.where((b) => b != null).length;
 
-  /// Maximum header bytes a scanner needs to read for this signature.
-  final int maxHeaderBytes;
+  /// Bytes a reader needs to test this signature.
+  int get headerBytes => offset + pattern.length;
 
   /// Tests [header] against [pattern] starting at [offset].
   bool matchesHeader(List<int> header) {
     if (header.length < offset + pattern.length) return false;
     for (var i = 0; i < pattern.length; i++) {
       final expected = pattern[i];
-      if (expected == null) continue; // wildcard
+      if (expected == null) continue;
       if (header[offset + i] != expected) return false;
-    }
-    return true;
-  }
-
-  /// Verifies the footer if one is defined. Returns `true` when no footer is
-  /// set or when the footer matches the last bytes of [fileBytes].
-  bool matchesFooter(List<int> fileBytes) {
-    if (footer == null || footer!.isEmpty) return true;
-    if (fileBytes.length < footer!.length) return false;
-    final start = fileBytes.length - footer!.length;
-    for (var i = 0; i < footer!.length; i++) {
-      if (fileBytes[start + i] != footer![i]) return false;
     }
     return true;
   }
