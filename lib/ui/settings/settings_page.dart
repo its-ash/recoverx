@@ -5,7 +5,6 @@ import 'package:theme/theme.dart';
 import '../scan/scan_view_model.dart';
 import '../sensitive/sensitive_controller.dart';
 import '../share/browse_controller.dart';
-import '../theme/theme_controller.dart';
 import 'settings_controller.dart';
 
 /// "Settings" tab: appearance, scan, content check, computer access, data.
@@ -17,7 +16,6 @@ class SettingsPage extends ConsumerWidget {
     final s = ref.watch(settingsProvider);
     final notifier = ref.read(settingsProvider.notifier);
     void set(AppSettings next) => notifier.update(next);
-    final themeMode = ref.watch(themeModeProvider);
     final scan = ref.watch(scanControllerProvider);
     final checking = ref.watch(sensitiveCheckProvider.select((c) => c.running));
     final serverRunning = ref.watch(browseServerProvider.select((b) => b.running));
@@ -28,26 +26,6 @@ class SettingsPage extends ConsumerWidget {
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: UiSpace.lg),
         children: [
-          UiListGroup(
-            header: 'Appearance',
-            children: [
-              UiListTile(
-                'Theme',
-                icon: Icons.palette_rounded,
-                trailing: UiSegmentedControl<ThemeMode>(
-                  const [
-                    UiSegment(ThemeMode.system, icon: Icons.brightness_auto_rounded, tooltip: 'System'),
-                    UiSegment(ThemeMode.light, icon: Icons.light_mode_rounded, tooltip: 'Light'),
-                    UiSegment(ThemeMode.dark, icon: Icons.dark_mode_rounded, tooltip: 'Dark'),
-                  ],
-                  value: themeMode,
-                  size: UiSize.sm,
-                  onChanged: ref.read(themeModeProvider.notifier).set,
-                ),
-              ),
-            ],
-          ),
-          const UiGap(UiSpace.lg),
           UiListGroup(
             header: 'Scan',
             footer: 'Deep scan also carves files out of unknown blobs, app databases and data '
@@ -177,6 +155,8 @@ class SettingsPage extends ConsumerWidget {
               ),
             ],
           ),
+          const UiGap(UiSpace.lg),
+          const UiAppearanceSection(),
           const UiGap(UiSpace.lg),
           const UiUpdateSection(storeId: 'recoverx'),
           const UiGap(UiSpace.lg),
