@@ -177,6 +177,10 @@ class SettingsPage extends ConsumerWidget {
               ),
             ],
           ),
+          const UiGap(UiSpace.lg),
+          const UiUpdateSection(storeId: 'recoverx'),
+          const UiGap(UiSpace.lg),
+          const UiDeveloperSection(),
         ],
       ),
     );
