@@ -6,6 +6,6 @@
   "tagline": "Find hidden, renamed and orphaned files by their signature.",
   "description": "RecoverX scans your storage and identifies files by their binary signature (magic numbers), so it finds hidden files, files with wrong or missing extensions, and orphaned files still on disk. Preview, then export with hash-verified reports. It cannot bring back files the system has already erased.",
   "category": "Tools",
-  "icon": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+  "icon": "assets/icon/logo-1024.png",
   "homepage": "https://recoverx.itsash.in/"
 }
