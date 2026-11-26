@@ -22,11 +22,16 @@ class ScannerService {
   SendPort? _control;
   ReceivePort? _port;
   StreamController<ScanUpdate>? _out;
+  bool _cancelled = false;
 
   bool get isRunning => _out != null;
 
   Stream<ScanUpdate> scan(ScanOptions options) {
+    _isolate?.kill(priority: Isolate.immediate);
+    final prevOut = _out;
     _dispose();
+    if (prevOut != null && !prevOut.isClosed) prevOut.close();
+    _cancelled = false;
     final out = StreamController<ScanUpdate>();
     final port = ReceivePort();
     _out = out;
@@ -39,9 +44,11 @@ class ScannerService {
       finished = true;
       last = last.copyWith(
           phase: ScanPhase.done, isPaused: false, isCancelled: cancelled);
-      out.add(ScanUpdate(last));
-      out.close();
-      _dispose();
+      if (!out.isClosed) {
+        out.add(ScanUpdate(last));
+        out.close();
+      }
+      if (identical(_out, out)) _dispose();
     }
 
     port.listen((msg) {
@@ -92,13 +99,14 @@ class ScannerService {
       onExit: port.sendPort,
       debugName: 'recoverx-scan',
     ).then((iso) {
-      if (finished) {
+      if (finished || _cancelled || !identical(_out, out)) {
         iso.kill(priority: Isolate.immediate);
+        finish(cancelled: true);
       } else {
         _isolate = iso;
       }
     }, onError: (Object e) {
-      out.addError(e);
+      if (!out.isClosed) out.addError(e);
       finish(cancelled: true);
     });
 
@@ -110,6 +118,7 @@ class ScannerService {
 
   /// Asks the isolate to stop; it sends a final "done (cancelled)" update.
   void cancel() {
+    _cancelled = true;
     final c = _control;
     if (c == null) {
       _isolate?.kill(priority: Isolate.immediate);
@@ -135,8 +144,11 @@ class ScannerService {
   }
 
   void dispose() {
+    _cancelled = true;
     _isolate?.kill(priority: Isolate.immediate);
+    final out = _out;
     _dispose();
+    if (out != null && !out.isClosed) out.close();
   }
 }
 

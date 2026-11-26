@@ -156,10 +156,12 @@ class ScanController extends StateNotifier<ScanState> {
   }
 
   Future<void> _persist(List<FileItem> items) async {
+    if (!mounted || !identical(state.items, items)) return;
     final db = _ref.read(scanDatabaseProvider);
     try {
       await db.clearAll();
       for (var i = 0; i < items.length; i += 2000) {
+        if (!mounted || !identical(state.items, items)) return;
         await db.insertFiles(items.sublist(i, (i + 2000).clamp(0, items.length)));
       }
     } catch (_) {}

@@ -209,7 +209,7 @@ class FileTypeDetector {
     // OpenDocument / EPUB: first entry is a stored "mimetype" file.
     final nameLen = h[26] | (h[27] << 8);
     final extraLen = h[28] | (h[29] << 8);
-    if (nameLen == 8 && String.fromCharCodes(h.sublist(30, 38)) == 'mimetype') {
+    if (nameLen == 8 && h.length >= 38 && String.fromCharCodes(h.sublist(30, 38)) == 'mimetype') {
       final cSize = h[18] | (h[19] << 8) | (h[20] << 16) | (h[21] << 24);
       final mime = s.ascii(30 + nameLen + extraLen, math.min(cSize, 100));
       final t = switch (mime) {

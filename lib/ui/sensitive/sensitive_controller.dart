@@ -176,4 +176,13 @@ class SensitiveCheckController extends StateNotifier<SensitiveCheckState> {
   void dismiss() {
     if (!state.running) state = const SensitiveCheckState();
   }
+
+  @override
+  void dispose() {
+    _cancel = true;
+    final r = _resume;
+    _resume = null;
+    if (r != null && !r.isCompleted) r.complete();
+    super.dispose();
+  }
 }

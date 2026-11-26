@@ -74,9 +74,14 @@ class ScanDatabase extends _$ScanDatabase {
         );
       });
 
-  Future<void> markRecovered(Iterable<String> ids) =>
-      (update(scannedFileRows)..where((r) => r.id.isIn(ids)))
+  Future<void> markRecovered(Iterable<String> ids) async {
+    final list = ids.toList();
+    for (var i = 0; i < list.length; i += 500) {
+      final chunk = list.sublist(i, (i + 500).clamp(0, list.length));
+      await (update(scannedFileRows)..where((r) => r.id.isIn(chunk)))
           .write(const ScannedFileRowsCompanion(isRecovered: Value(true)));
+    }
+  }
 
   /// Stores sensitive-content results by item id.
   Future<void> saveSensitive(Map<String, SensitiveRating> ratings) => batch((b) {

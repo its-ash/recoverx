@@ -118,7 +118,7 @@ class SettingsPage extends ConsumerWidget {
                       message: 'Scores are removed; run the check again to get them back.',
                       confirmLabel: 'Clear',
                       destructive: true);
-                  if (ok) ref.read(scanControllerProvider.notifier).clearSensitive();
+                  if (ok && context.mounted) ref.read(scanControllerProvider.notifier).clearSensitive();
                 },
               ),
               UiListTile(
@@ -133,7 +133,7 @@ class SettingsPage extends ConsumerWidget {
                       message: 'Removes the scan list from RecoverX. Files on the phone are not touched.',
                       confirmLabel: 'Clear',
                       destructive: true);
-                  if (ok) ref.read(scanControllerProvider.notifier).clearResults();
+                  if (ok && context.mounted) ref.read(scanControllerProvider.notifier).clearResults();
                 },
               ),
             ],

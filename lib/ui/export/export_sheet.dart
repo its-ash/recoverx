@@ -31,6 +31,7 @@ class _ExportPanelState extends ConsumerState<ExportPanel> {
     final removable = _volumes.where((v) => v.removable);
     _target = (removable.isNotEmpty ? removable.first : _volumes.firstOrNull)?.path;
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final s = ref.read(exportControllerProvider);
       if (!s.running) ref.read(exportControllerProvider.notifier).reset();
     });

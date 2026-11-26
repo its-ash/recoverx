@@ -238,10 +238,11 @@ String _uniquePath(String dir, String name, Set<String> used) {
 /// Copies the item's bytes to [target]; returns SHA-256 of what was read.
 String _copyHashed(FileItem item, String target, void Function(int) onBytes) {
   final src = File(item.path).openSync();
-  final dst = File(target).openSync(mode: FileMode.writeOnly);
+  RandomAccessFile? dst;
   final sink = _DigestSink();
   final hasher = sha256.startChunkedConversion(sink);
   try {
+    dst = File(target).openSync(mode: FileMode.writeOnly);
     final start = item.sourceOffset ?? 0;
     final length = item.isCarved ? item.size : src.lengthSync();
     src.setPositionSync(start);
@@ -258,7 +259,7 @@ String _copyHashed(FileItem item, String target, void Function(int) onBytes) {
     dst.flushSync();
   } finally {
     src.closeSync();
-    dst.closeSync();
+    dst?.closeSync();
   }
   hasher.close();
   return sink.value.toString();
